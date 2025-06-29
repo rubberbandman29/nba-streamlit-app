@@ -24,8 +24,8 @@ team_players = [p for p in all_active_players if p['full_name'] in roster_names]
 player_names = sorted([p['full_name'] for p in team_players])
 selected_player = st.selectbox("Select Player", player_names)
 
-# --- Filter Controls: Line, Lookback, Seasons ---
-col1, col2, col3 = st.columns(3)
+# --- Input Controls ---
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     selected_line = st.number_input("Over/Under Line", min_value=0.0, value=20.5)
 with col2:
@@ -33,48 +33,64 @@ with col2:
 with col3:
     season_range = st.selectbox("Seasons to Look Back", list(range(2, 26)), index=0)
 
-# --- Load Multi-Season Gamelogs ---
-@st.cache_data(show_spinner=True)
-def load_multi_season_logs(player_id, num_seasons):
-    current_year = datetime.datetime.now().year
+# --- Helper Function to Generate Seasons ---
+def generate_past_seasons(n):
+    base_year = datetime.datetime.now().year
     if datetime.datetime.now().month < 10:
-        current_year -= 1
-    seasons = [f"{year}-{str(year+1)[-2:]}" for year in range(current_year, current_year - num_seasons, -1)]
+        base_year -= 1
+    seasons = []
+    count = 0
+    year = base_year
+    while count < n:
+        season_str = f"{year}-{str(year+1)[-2:]}"
+        seasons.append(season_str)
+        count += 1
+        year -= 1
+    return seasons
+
+# --- Load Multi-Season Logs ---
+@st.cache_data(show_spinner=True)
+def load_multi_season_logs(player_id, seasons):
     frames = []
     for season in seasons:
-        log = playergamelog.PlayerGameLog(player_id=player_id, season=season, season_type_all_star='Regular Season')
-        df = log.get_data_frames()[0]
-        df['SEASON'] = season
-        frames.append(df)
-    return pd.concat(frames, ignore_index=True)
+        try:
+            log = playergamelog.PlayerGameLog(player_id=player_id, season=season, season_type_all_star='Regular Season')
+            df = log.get_data_frames()[0]
+            df['SEASON'] = season
+            frames.append(df)
+        except:
+            continue
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
+seasons_to_load = generate_past_seasons(season_range)
 player_id = next(p['id'] for p in team_players if p['full_name'] == selected_player)
-df = load_multi_season_logs(player_id, season_range)
+df = load_multi_season_logs(player_id, seasons_to_load)
 
 # --- Preprocess Data ---
+if df.empty:
+    st.warning("No data available for this player across selected seasons.")
+    st.stop()
+
 df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
 df['OPPONENT'] = df['MATCHUP'].str.extract("vs. (.*)|@ (.*)").bfill(axis=1).iloc[:, 0]
-
-# --- Played Against Dropdown (placed after df exists) ---
-col4 = st.columns(1)
-with col4[0]:
-    opponent_options = sorted(df['OPPONENT'].unique())
-    selected_opponent = st.selectbox("Played Against", ["All"] + opponent_options)
-
-df = df[['GAME_DATE', 'MATCHUP', 'PTS', 'MIN', 'SEASON', 'OPPONENT']]
 df['HOME'] = df['MATCHUP'].str.contains('vs.')
 df['PTS'] = pd.to_numeric(df['PTS'])
 df['MIN'] = pd.to_numeric(df['MIN'])
 df['PTS_PER_MIN'] = df['PTS'] / df['MIN']
 df['OVER_LINE'] = df['PTS'] > selected_line
 
-# --- Filter Based on Opponent or Slider ---
+# --- Opponent Filter (AFTER df created) ---
+with col4:
+    opponent_options = sorted(df['OPPONENT'].dropna().unique())
+    selected_opponent = st.selectbox("Played Against", ["All"] + opponent_options)
+
+# --- Filter Logic ---
 if selected_opponent != "All":
-    df = df[df['OPPONENT'] == selected_opponent].sort_values('GAME_DATE', ascending=False).head(5)
+    df = df[df['OPPONENT'] == selected_opponent].sort_values('GAME_DATE', ascending=False)
 else:
     df = df.sort_values('GAME_DATE', ascending=False).head(lookback_games)
 
-# --- Summary Stats ---
+# --- Summary ---
 avg_pts = df['PTS'].mean()
 avg_min = df['MIN'].mean()
 over_rate = df['OVER_LINE'].mean() * 100
@@ -82,9 +98,9 @@ over_rate = df['OVER_LINE'].mean() * 100
 st.markdown(f"**{selected_player}** averages **{avg_pts:.1f} PPG** and **{avg_min:.1f} minutes** over the last **{len(df)}** games.")
 st.markdown(f"**Over Line Hit Rate:** {over_rate:.0f}% (Line: {selected_line} points)")
 if selected_opponent != "All":
-    st.markdown(f"*Filtered by last 5 games against {selected_opponent} across {season_range} seasons*")
+    st.markdown(f"*Showing all games against {selected_opponent} across last {season_range} seasons*")
 
-# --- Visuals (6 Graphs in 2 Columns) ---
+# --- 2 Column Visuals ---
 col_l, col_r = st.columns(2)
 
 with col_l:
@@ -100,7 +116,7 @@ with col_l:
     ax1.grid(True)
     fig1.colorbar(sc, ax=ax1, label="Days Ago")
     st.pyplot(fig1)
-    st.markdown("*Shows correlation between minutes and points. Brighter dots are more recent games.*")
+    st.caption("*Shows correlation between minutes and points. Brighter dots = more recent games.*")
 
 with col_r:
     st.subheader("2. Game-by-Game Points and Minutes")
@@ -115,7 +131,7 @@ with col_r:
     ax2.legend()
     ax2.grid(True)
     st.pyplot(fig2)
-    st.markdown("*Points and minutes per game, trend color shows efficiency.*")
+    st.caption("*Track consistency over time between points and minutes.*")
 
 with col_l:
     st.subheader("3. Points vs Over/Under Line")
@@ -128,7 +144,7 @@ with col_l:
     ax3.legend()
     ax3.grid(True)
     st.pyplot(fig3)
-    st.markdown("*Green = Over line, Red = Under.*")
+    st.caption("*Green = Over line, Red = Under.*")
 
 with col_r:
     st.subheader("4. Scoring Efficiency Heatmap (PTS/MIN)")
@@ -143,7 +159,7 @@ with col_r:
     ax4.set_yticks([])
     fig4.colorbar(im, ax=ax4, orientation='vertical')
     st.pyplot(fig4)
-    st.markdown("*How efficiently the player scores per minute.*")
+    st.caption("*How efficiently the player scores per minute.*")
 
 with col_l:
     st.subheader("5. Deviation from Average")
@@ -157,7 +173,7 @@ with col_l:
     ax5.legend()
     ax5.grid(True)
     st.pyplot(fig5)
-    st.markdown("*Bar chart of how much above or below the average each game was.*")
+    st.caption("*Each bar shows how far above or below average a game was.*")
 
 with col_r:
     st.subheader("6. Over vs Under Pie")
@@ -168,4 +184,4 @@ with col_r:
             colors=['green', 'red'], wedgeprops=dict(width=0.4))
     ax6.set_title("Over/Under Distribution")
     st.pyplot(fig6)
-    st.markdown("*Shows proportion of games over or under your line.*")
+    st.caption("*Quick look at hit rate for your selected line.*")
