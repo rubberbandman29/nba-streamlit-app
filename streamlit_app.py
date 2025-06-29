@@ -79,6 +79,7 @@ with col1:
     ax1.grid(True)
     fig1.colorbar(sc, ax=ax1, label="Days Ago")
     st.pyplot(fig1)
+    st.markdown("*Shows correlation between minutes played and points scored. Newer games are lighter in color. Helps identify trends or outliers.*")
 
 # Graph 2
 with col2:
@@ -94,6 +95,7 @@ with col2:
     ax2.legend()
     ax2.grid(True)
     st.pyplot(fig2)
+    st.markdown("*Visualizes game-by-game variation in points and minutes. Helps see consistency, spikes, and dips.*")
 
 # Graph 3
 with col1:
@@ -107,6 +109,7 @@ with col1:
     ax3.legend()
     ax3.grid(True)
     st.pyplot(fig3)
+    st.markdown("*Compares player's points to the bettor's over/under line. Green = Over, Red = Under.*")
 
 # Graph 4
 with col2:
@@ -122,6 +125,7 @@ with col2:
     ax4.set_yticks([])
     fig4.colorbar(im, ax=ax4, orientation='vertical')
     st.pyplot(fig4)
+    st.markdown("*Measures scoring efficiency. Great for identifying high-usage games or underperformances despite minutes.*")
 
 # Graph 5
 with col1:
@@ -136,6 +140,7 @@ with col1:
     ax5.legend()
     ax5.grid(True)
     st.pyplot(fig5)
+    st.markdown("*Shows how each game compared to the average. Good for spotting streaks or regression.*")
 
 # Graph 6
 with col2:
@@ -147,3 +152,4 @@ with col2:
             colors=['green', 'red'], wedgeprops=dict(width=0.4))
     ax6.set_title("Over/Under Distribution")
     st.pyplot(fig6)
+    st.markdown("*Simple donut chart showing how often the player goes over the specified line.*")
