@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from nba_api.stats.static import players, teams
 from nba_api.stats.endpoints import playergamelog, commonteamroster
-import datetime
 
 st.set_page_config(layout="wide")
 st.title("NBA Player Insights – Bettor Dashboard")
@@ -16,12 +15,12 @@ selected_team = st.selectbox("Select Team", team_names)
 
 team_id = next(team['id'] for team in team_data if team['full_name'] == selected_team)
 
-# Get roster using commonteamroster endpoint
+# Get roster
 roster = commonteamroster.CommonTeamRoster(team_id=team_id)
 roster_df = roster.get_data_frames()[0]
 roster_names = roster_df['PLAYER'].tolist()
 
-# Get all active players and filter by roster names
+# Filter active players
 all_active_players = [p for p in players.get_players() if p['is_active']]
 team_players = [p for p in all_active_players if p['full_name'] in roster_names]
 player_names = sorted([p['full_name'] for p in team_players])
@@ -33,24 +32,38 @@ with col_a:
     selected_line = st.number_input("Over/Under Line", min_value=0.0, value=20.5)
 with col_b:
     lookback_games = st.slider("Look Back Games", min_value=5, max_value=30, value=15, step=1)
+
+# Load multi-season logs
+@st.cache_data(show_spinner=False)
+def load_multi_season_logs(player_id, seasons):
+    frames = []
+    for season in seasons:
+        log = playergamelog.PlayerGameLog(player_id=player_id, season=season, season_type_all_star='Regular Season')
+        df = log.get_data_frames()[0]
+        df['SEASON'] = season
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True)
+
+player_id = next(p['id'] for p in team_players if p['full_name'] == selected_player)
+seasons_to_check = ['2024-25', '2023-24', '2022-23']
+df = load_multi_season_logs(player_id, seasons_to_check)
+
+# Extract opponent column
+df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
+df['OPPONENT'] = df['MATCHUP'].str.extract("vs. (.*)|@ (.*)").bfill(axis=1).iloc[:, 0]
+opponent_options = sorted(df['OPPONENT'].unique())
 with col_c:
-    # Load player data
-    player_id = next(p['id'] for p in team_players if p['full_name'] == selected_player)
-    gamelog = playergamelog.PlayerGameLog(player_id=player_id, season_type_all_star='Regular Season')
-    df = gamelog.get_data_frames()[0]
-    df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
-    df['OPPONENT'] = df['MATCHUP'].str.extract("vs. (.*)|@ (.*)").bfill(axis=1).iloc[:, 0]
-    opponent_options = sorted(df['OPPONENT'].unique())
     selected_opponent = st.selectbox("Played Against", ["All"] + opponent_options)
 
-# Filter logic
-df = df[['GAME_DATE', 'MATCHUP', 'PTS', 'MIN', 'OPPONENT']]
+# Clean and process
+df = df[['GAME_DATE', 'MATCHUP', 'PTS', 'MIN', 'SEASON', 'OPPONENT']]
 df['HOME'] = df['MATCHUP'].str.contains('vs.')
 df['PTS'] = pd.to_numeric(df['PTS'])
 df['MIN'] = pd.to_numeric(df['MIN'])
 df['PTS_PER_MIN'] = df['PTS'] / df['MIN']
 df['OVER_LINE'] = df['PTS'] > selected_line
 
+# Filter based on opponent or lookback
 if selected_opponent != "All":
     df = df[df['OPPONENT'] == selected_opponent].sort_values('GAME_DATE', ascending=False).head(5)
 else:
@@ -64,12 +77,11 @@ over_rate = df['OVER_LINE'].mean() * 100
 st.markdown(f"**{selected_player}** averages **{avg_pts:.1f} PPG** and **{avg_min:.1f} minutes** over the last **{len(df)}** games.")
 st.markdown(f"**Over Line Hit Rate:** {over_rate:.0f}% (Line: {selected_line} points)")
 if selected_opponent != "All":
-    st.markdown(f"*Filtered by last 5 games against {selected_opponent}*")
+    st.markdown(f"*Filtered by last 5 games against {selected_opponent} across seasons*")
 
 # --- Visualizations ---
 col1, col2 = st.columns(2)
 
-# Graph 1
 with col1:
     st.subheader("1. Minutes vs Points (Recency Colored)")
     fig1, ax1 = plt.subplots()
@@ -83,9 +95,8 @@ with col1:
     ax1.grid(True)
     fig1.colorbar(sc, ax=ax1, label="Days Ago")
     st.pyplot(fig1)
-    st.markdown("*Shows how minutes correlate to points. Lighter = more recent games. Useful for spotting hot streaks or underuse.*")
+    st.markdown("*Shows how minutes correlate to points. Lighter = more recent games.*")
 
-# Graph 2
 with col2:
     st.subheader("2. Game-by-Game Points and Minutes")
     fig2, ax2 = plt.subplots()
@@ -99,9 +110,8 @@ with col2:
     ax2.legend()
     ax2.grid(True)
     st.pyplot(fig2)
-    st.markdown("*Tracks points vs minutes game-by-game. Look for consistent effort or efficiency drop-offs.*")
+    st.markdown("*Compare game-by-game minutes and points.*")
 
-# Graph 3
 with col1:
     st.subheader("3. Points vs Over/Under Line")
     fig3, ax3 = plt.subplots()
@@ -113,9 +123,8 @@ with col1:
     ax3.legend()
     ax3.grid(True)
     st.pyplot(fig3)
-    st.markdown("*Bar chart showing which games went over or under the specified line. Great for pattern recognition.*")
+    st.markdown("*Highlights games above or below your line.*")
 
-# Graph 4
 with col2:
     st.subheader("4. Scoring Efficiency Heatmap (PTS/MIN)")
     fig4, ax4 = plt.subplots(figsize=(10, 1.5))
@@ -129,11 +138,10 @@ with col2:
     ax4.set_yticks([])
     fig4.colorbar(im, ax=ax4, orientation='vertical')
     st.pyplot(fig4)
-    st.markdown("*Measures efficiency of scoring relative to minutes played. Spot high-effort and low-yield games.*")
+    st.markdown("*Scoring efficiency per minute.*")
 
-# Graph 5
 with col1:
-    st.subheader("5. Deviation from Game Average")
+    st.subheader("5. Deviation from Average")
     fig5, ax5 = plt.subplots()
     diff = df['PTS'] - avg_pts
     ax5.bar(df['GAME_DATE'].dt.strftime('%b %d'), diff, color='purple')
@@ -144,11 +152,10 @@ with col1:
     ax5.legend()
     ax5.grid(True)
     st.pyplot(fig5)
-    st.markdown("*Compares each game's score to the player's average. Helps spot overperformances and slumps.*")
+    st.markdown("*Shows overperformance or slumps.*")
 
-# Graph 6
 with col2:
-    st.subheader("6. Over vs Under Line")
+    st.subheader("6. Over vs Under Line Pie")
     over_count = df['OVER_LINE'].sum()
     under_count = len(df) - over_count
     fig6, ax6 = plt.subplots()
@@ -156,4 +163,4 @@ with col2:
             colors=['green', 'red'], wedgeprops=dict(width=0.4))
     ax6.set_title("Over/Under Distribution")
     st.pyplot(fig6)
-    st.markdown("*Summarizes how often the player goes over or under your line. Good for quick gut checks.*")
+    st.markdown("*Summarizes how often the player hits your line.*")
