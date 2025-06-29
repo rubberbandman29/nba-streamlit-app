@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from nba_api.stats.static import players, teams
-from nba_api.stats.endpoints import playergamelog
+from nba_api.stats.endpoints import playergamelog, commonteamroster
 import datetime
 
 st.set_page_config(layout="wide")
@@ -15,18 +15,26 @@ team_names = sorted([team['full_name'] for team in team_data])
 selected_team = st.selectbox("Select Team", team_names)
 
 team_id = next(team['id'] for team in team_data if team['full_name'] == selected_team)
-team_players = [p for p in players.get_players() if p['is_active'] and p['team_id'] == team_id]
+
+# Get roster using commonteamroster endpoint
+roster = commonteamroster.CommonTeamRoster(team_id=team_id)
+roster_df = roster.get_data_frames()[0]
+roster_names = roster_df['PLAYER'].tolist()
+
+# Get all active players and filter by roster names
+all_active_players = [p for p in players.get_players() if p['is_active']]
+team_players = [p for p in all_active_players if p['full_name'] in roster_names]
 player_names = sorted([p['full_name'] for p in team_players])
 selected_player = st.selectbox("Select Player", player_names)
 
 selected_line = st.number_input("Enter Over/Under Line for Points", min_value=0.0, value=20.5)
 
 # Load player data
-target_player_id = next(p['id'] for p in team_players if p['full_name'] == selected_player)
+player_id = next(p['id'] for p in team_players if p['full_name'] == selected_player)
 now = datetime.datetime.now()
 season_start = now.year - 1 if now.month < 10 else now.year
 season_str = f"{season_start}-{str(season_start + 1)[-2:]}"
-gamelog = playergamelog.PlayerGameLog(player_id=target_player_id, season=season_str, season_type_all_star='Regular Season')
+gamelog = playergamelog.PlayerGameLog(player_id=player_id, season=season_str, season_type_all_star='Regular Season')
 df = gamelog.get_data_frames()[0]
 
 # Preprocess
@@ -99,7 +107,8 @@ fig4, ax4 = plt.subplots(figsize=(10, 1.5))
 heat = np.array([df['PTS_PER_MIN']])
 im = ax4.imshow(heat, cmap='coolwarm', aspect='auto')
 for i, v in enumerate(df['PTS_PER_MIN']):
-    ax4.text(i, 0, f"{v:.2f}", ha='center', va='center', color='white' if v > df['PTS_PER_MIN'].mean() else 'black', fontsize=8)
+    ax4.text(i, 0, f"{v:.2f}", ha='center', va='center',
+             color='white' if v > df['PTS_PER_MIN'].mean() else 'black', fontsize=8)
 ax4.set_xticks(np.arange(len(df)))
 ax4.set_xticklabels(df['GAME_DATE'].dt.strftime('%b %d'), rotation=45)
 ax4.set_yticks([])
@@ -120,7 +129,7 @@ ax5.legend()
 ax5.grid(True)
 st.pyplot(fig5)
 
-# Graph 6: Donut Chart
+# Graph 6: Donut Chart – Over vs Under
 st.subheader("6. Over vs Under Line")
 over_count = df['OVER_LINE'].sum()
 under_count = len(df) - over_count
