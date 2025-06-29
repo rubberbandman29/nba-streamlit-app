@@ -24,8 +24,8 @@ team_players = [p for p in all_active_players if p['full_name'] in roster_names]
 player_names = sorted([p['full_name'] for p in team_players])
 selected_player = st.selectbox("Select Player", player_names)
 
-# --- Controls Row ---
-col1, col2, col3, col4 = st.columns([1, 1, 1, 2])
+# --- Controls Row (All in One Line) ---
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     selected_line = st.number_input("Over/Under Line", min_value=0.0, value=20.5)
 with col2:
@@ -33,7 +33,8 @@ with col2:
 with col3:
     season_range = st.selectbox("Seasons to Look Back", list(range(2, 26)), index=0)
 with col4:
-    st.write("")  # Spacer
+    opponent_options = sorted(df['OPPONENT'].unique())
+    selected_opponent = st.selectbox("Played Against", ["All"] + opponent_options)
 
 # --- Load Multi-Season Gamelogs ---
 @st.cache_data(show_spinner=True)
