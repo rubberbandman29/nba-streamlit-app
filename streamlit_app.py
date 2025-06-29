@@ -34,10 +34,9 @@ with col_a:
 with col_b:
     lookback_games = st.slider("Look Back Games", min_value=5, max_value=30, value=15, step=1)
 with col_c:
-    opponents = sorted(roster_df['TEAM_ABBREVIATION'].unique().tolist() + [''])
-    gamelog_opps = sorted(set(roster_df['TEAM_ABBREVIATION'].tolist()))
-    gamelog = playergamelog.PlayerGameLog(player_id=next(p['id'] for p in team_players if p['full_name'] == selected_player),
-                                          season_type_all_star='Regular Season')
+    # Load player data
+    player_id = next(p['id'] for p in team_players if p['full_name'] == selected_player)
+    gamelog = playergamelog.PlayerGameLog(player_id=player_id, season_type_all_star='Regular Season')
     df = gamelog.get_data_frames()[0]
     df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
     df['OPPONENT'] = df['MATCHUP'].str.extract("vs. (.*)|@ (.*)").bfill(axis=1).iloc[:, 0]
