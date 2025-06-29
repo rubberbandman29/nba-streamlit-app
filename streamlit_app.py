@@ -24,17 +24,14 @@ team_players = [p for p in all_active_players if p['full_name'] in roster_names]
 player_names = sorted([p['full_name'] for p in team_players])
 selected_player = st.selectbox("Select Player", player_names)
 
-# --- Controls Row (All in One Line) ---
-col1, col2, col3, col4 = st.columns(4)
+# --- Filter Controls: Line, Lookback, Seasons ---
+col1, col2, col3 = st.columns(3)
 with col1:
     selected_line = st.number_input("Over/Under Line", min_value=0.0, value=20.5)
 with col2:
     lookback_games = st.slider("Look Back Games", min_value=5, max_value=30, value=15)
 with col3:
     season_range = st.selectbox("Seasons to Look Back", list(range(2, 26)), index=0)
-with col4:
-    opponent_options = sorted(df['OPPONENT'].unique())
-    selected_opponent = st.selectbox("Played Against", ["All"] + opponent_options)
 
 # --- Load Multi-Season Gamelogs ---
 @st.cache_data(show_spinner=True)
@@ -57,8 +54,12 @@ df = load_multi_season_logs(player_id, season_range)
 # --- Preprocess Data ---
 df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
 df['OPPONENT'] = df['MATCHUP'].str.extract("vs. (.*)|@ (.*)").bfill(axis=1).iloc[:, 0]
-opponent_options = sorted(df['OPPONENT'].unique())
-selected_opponent = st.selectbox("Played Against", ["All"] + opponent_options)
+
+# --- Played Against Dropdown (placed after df exists) ---
+col4 = st.columns(1)
+with col4[0]:
+    opponent_options = sorted(df['OPPONENT'].unique())
+    selected_opponent = st.selectbox("Played Against", ["All"] + opponent_options)
 
 df = df[['GAME_DATE', 'MATCHUP', 'PTS', 'MIN', 'SEASON', 'OPPONENT']]
 df['HOME'] = df['MATCHUP'].str.contains('vs.')
@@ -67,13 +68,13 @@ df['MIN'] = pd.to_numeric(df['MIN'])
 df['PTS_PER_MIN'] = df['PTS'] / df['MIN']
 df['OVER_LINE'] = df['PTS'] > selected_line
 
-# --- Filter Data ---
+# --- Filter Based on Opponent or Slider ---
 if selected_opponent != "All":
     df = df[df['OPPONENT'] == selected_opponent].sort_values('GAME_DATE', ascending=False).head(5)
 else:
     df = df.sort_values('GAME_DATE', ascending=False).head(lookback_games)
 
-# --- Stats Summary ---
+# --- Summary Stats ---
 avg_pts = df['PTS'].mean()
 avg_min = df['MIN'].mean()
 over_rate = df['OVER_LINE'].mean() * 100
