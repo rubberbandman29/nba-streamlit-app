@@ -27,27 +27,30 @@ team_players = [p for p in all_active_players if p['full_name'] in roster_names]
 player_names = sorted([p['full_name'] for p in team_players])
 selected_player = st.selectbox("Select Player", player_names)
 
-selected_line = st.number_input("Enter Over/Under Line for Points", min_value=0.0, value=20.5)
-lookback_games = st.slider("Look Back Games", min_value=5, max_value=30, value=15, step=1)
+# UI Row: Over/Under, Lookback, Opponent
+col_a, col_b, col_c = st.columns([1, 1, 2])
+with col_a:
+    selected_line = st.number_input("Over/Under Line", min_value=0.0, value=20.5)
+with col_b:
+    lookback_games = st.slider("Look Back Games", min_value=5, max_value=30, value=15, step=1)
+with col_c:
+    opponents = sorted(roster_df['TEAM_ABBREVIATION'].unique().tolist() + [''])
+    gamelog_opps = sorted(set(roster_df['TEAM_ABBREVIATION'].tolist()))
+    gamelog = playergamelog.PlayerGameLog(player_id=next(p['id'] for p in team_players if p['full_name'] == selected_player),
+                                          season_type_all_star='Regular Season')
+    df = gamelog.get_data_frames()[0]
+    df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
+    df['OPPONENT'] = df['MATCHUP'].str.extract("vs. (.*)|@ (.*)").bfill(axis=1).iloc[:, 0]
+    opponent_options = sorted(df['OPPONENT'].unique())
+    selected_opponent = st.selectbox("Played Against", ["All"] + opponent_options)
 
-# Load player data
-player_id = next(p['id'] for p in team_players if p['full_name'] == selected_player)
-gamelog = playergamelog.PlayerGameLog(player_id=player_id, season_type_all_star='Regular Season')
-df = gamelog.get_data_frames()[0]
-
-# Preprocess
-df['GAME_DATE'] = pd.to_datetime(df['GAME_DATE'])
-df = df[['GAME_DATE', 'MATCHUP', 'PTS', 'MIN']]
-df['OPPONENT'] = df['MATCHUP'].str.extract("vs. (.*)|@ (.*)").bfill(axis=1).iloc[:, 0]
+# Filter logic
+df = df[['GAME_DATE', 'MATCHUP', 'PTS', 'MIN', 'OPPONENT']]
 df['HOME'] = df['MATCHUP'].str.contains('vs.')
 df['PTS'] = pd.to_numeric(df['PTS'])
 df['MIN'] = pd.to_numeric(df['MIN'])
 df['PTS_PER_MIN'] = df['PTS'] / df['MIN']
 df['OVER_LINE'] = df['PTS'] > selected_line
-
-# Opponent filter
-opponents = sorted(df['OPPONENT'].unique())
-selected_opponent = st.selectbox("Played Against (Opponent)", ["All"] + opponents)
 
 if selected_opponent != "All":
     df = df[df['OPPONENT'] == selected_opponent].sort_values('GAME_DATE', ascending=False).head(5)
